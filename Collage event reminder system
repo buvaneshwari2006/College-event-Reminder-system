@@ -1,0 +1,106 @@
+import tkinter as tk
+from tkinter import messagebox, ttk
+import sqlite3
+from datetime import datetime, timedelta
+import threading
+import time
+
+# ================= Database setup =================
+conn = sqlite3.connect("events.db")
+cursor = conn.cursor()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT,
+    date TEXT,
+    time TEXT,
+    description TEXT
+)
+""")
+conn.commit()
+
+# ================= Functions =================
+def add_event():
+    name = name_entry.get()
+    date = date_entry.get()
+    time_ = time_entry.get()
+    desc = desc_entry.get("1.0", tk.END).strip()
+    
+    if name and date and time_:
+        cursor.execute("INSERT INTO events (name, date, time, description) VALUES (?, ?, ?, ?)", 
+                       (name, date, time_, desc))
+        conn.commit()
+        messagebox.showinfo("Success", "Event added successfully!")
+        name_entry.delete(0, tk.END)
+        date_entry.delete(0, tk.END)
+        time_entry.delete(0, tk.END)
+        desc_entry.delete("1.0", tk.END)
+        display_events()
+    else:
+        messagebox.showerror("Error", "Please fill all fields!")
+
+def display_events():
+    for row in tree.get_children():
+        tree.delete(row)
+    cursor.execute("SELECT * FROM events")
+    for event in cursor.fetchall():
+        tree.insert("", tk.END, values=event)
+
+def delete_event():
+    selected_item = tree.selection()[0]
+    event_id = tree.item(selected_item)['values'][0]
+    cursor.execute("DELETE FROM events WHERE id=?", (event_id,))
+    conn.commit()
+    tree.delete(selected_item)
+    messagebox.showinfo("Deleted", "Event deleted successfully!")
+
+def check_reminders():
+    while True:
+        now = datetime.now()
+        cursor.execute("SELECT * FROM events")
+        for event in cursor.fetchall():
+            event_datetime = datetime.strptime(event[2] + " " + event[3], "%Y-%m-%d %H:%M")
+            if 0 <= (event_datetime - now).total_seconds() <= 60:  # Reminder 1 min before
+                messagebox.showinfo("Reminder", f"Event '{event[1]}' is happening at {event[3]}!")
+        time.sleep(60)
+
+# ================= GUI setup =================
+root = tk.Tk()
+root.title("College Event Reminder System")
+root.geometry("700x500")
+
+# Form
+tk.Label(root, text="Event Name:").grid(row=0, column=0, padx=10, pady=5)
+name_entry = tk.Entry(root)
+name_entry.grid(row=0, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Date (YYYY-MM-DD):").grid(row=1, column=0, padx=10, pady=5)
+date_entry = tk.Entry(root)
+date_entry.grid(row=1, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Time (HH:MM 24hr):").grid(row=2, column=0, padx=10, pady=5)
+time_entry = tk.Entry(root)
+time_entry.grid(row=2, column=1, padx=10, pady=5)
+
+tk.Label(root, text="Description:").grid(row=3, column=0, padx=10, pady=5)
+desc_entry = tk.Text(root, height=4, width=30)
+desc_entry.grid(row=3, column=1, padx=10, pady=5)
+
+tk.Button(root, text="Add Event", command=add_event).grid(row=4, column=1, pady=10)
+
+# Event list
+columns = ("ID", "Name", "Date", "Time", "Description")
+tree = ttk.Treeview(root, columns=columns, show='headings')
+for col in columns:
+    tree.heading(col, text=col)
+tree.grid(row=5, column=0, columnspan=3, padx=10, pady=10)
+
+tk.Button(root, text="Delete Selected Event", command=delete_event).grid(row=6, column=1, pady=10)
+
+display_events()
+
+# Reminder thread
+reminder_thread = threading.Thread(target=check_reminders, daemon=True)
+reminder_thread.start()
+
+root.mainloop()
